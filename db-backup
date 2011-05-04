@@ -1,0 +1,145 @@
+#!/bin/bash
+#Version 0.2.2
+#db-backup
+#
+#####################################################################
+# Script does four things;
+# -Backs up a database to specified path
+# -Compress the backup using gzip compression tool
+# -Encrypt the backup
+# -rsync the backup directory to (a) file server(s).
+# 
+##################################################################
+# Created: Emmanuel Toko 2010-10-10 09:00 0.1
+# Modified: Emmanuel Toko 2011-05-04 20:06 0.11
+#####################################################################
+
+#Variables
+DATE=`date +%F~%T`
+FILENAME=/home/username/backups/backup-$DATE.sql
+LOGFILE=/home/username/backups/log/backup-log
+BACKUPDIR=/home/username/backups/
+MKDIR=/bin/mkdir
+TOUCH=/usr/bin/touch
+
+if [ -e $BACKUPDIR ]
+then
+	
+else
+	$MKDIR -p $BACKUPDIR/log
+	$TOUCH $LOGFILE
+fi
+
+##Space separated list of backup hosts Backup hosts
+RHOSTS="user1@192.168.56.1:backups user2@192.168.10.9:backups/ user3@172.16.1.11:backups user4@192.168.50.1:"
+
+#Programs
+MYSQLDUMP=/usr/bin/mysqldump
+GPG=/usr/bin/gpg
+PING=/bin/ping
+RSYNC=/usr/bin/rsync
+GZIP=/bin/gzip
+UNLINK=/usr/bin/unlink
+
+#Load VERBOSE setting and other rcS variables
+. /lib/init/vars.sh
+
+#LSB log-* functions
+. /lib/lsb/init-functions
+
+if [ -e $MYSQLDUMP ]
+then
+	echo "Fatal exception: mysqldump was not installed...."
+	log_failure_msg "mysqldump was not installed"
+	exit 1
+fi
+
+echo "**********************************************************" &>> $LOGFILE
+
+echo
+echo "  Backup operations for date: $DATE" &>>$LOGFILE
+
+#Backup db
+echo "Backing up   database..." &>> $LOGFILE
+log_action_begin_msg "Backing up   database..."
+$MYSQLDUMP -u username -pusername username > $FILENAME
+
+SUCCESS_STATUS=0
+
+if [ "$?" -eq "$SUCCESS_STATUS" ]
+then
+	log_action_end_msg "$?"
+else
+	log_failure_msg "$?"
+	echo "Encountered an error during backup $?" &>> $LOGFILE 
+	exit 1
+fi
+
+#Compress file
+echo "Compressing   db dump... $FILENAME" &>>$LOGFILE
+log_action_begin_msg "Compressing   backup using gzip..."
+$GZIP $FILENAME
+if [ "$?" -eq "$SUCCESS_STATUS" ]
+then
+	log_action_end_msg "$?"
+	echo "...successfully compressed db dump $FILENAME" &>>$LOGFILE	
+else
+	log_failure_msg "$?"
+	echo "...Experienced an error while compressing file $FILENAME" &>>$LOGFILE
+	exit 1 #Consider making it possible to send backup files despite the fact that they may not be well compressed
+fi
+
+log_action_begin_msg "Encrypting backup"
+FILE_EXTENSION=".gz"
+COMPRESSED_FILENAME=$FILENAME$FILE_EXTENSION
+$GPG --yes --passphrase="!kosidurame?no" -c $COMPRESSED_FILENAME
+ 	
+if [ "$?" -eq "$SUCCESS_STATUS" ]
+then
+	log_action_end_msg "$?"
+	echo "successfully encrypted backup" &>>$LOGFILE
+	$UNLINK $COMPRESSED_FILENAME
+else
+	log_failure_msg "$?"
+	echo "experienced an error during encryption" &>>$LOGFILE
+fi
+
+#Copy files to file server
+echo "Copying backups to file server..."&>>$LOGFILE
+#log_action_begin_msg "Copying backups to file server ..."
+
+# number of ping requests
+COUNT=5
+
+# email report when
+SUBJECT="Ping failed"
+EMAILID="username@localhost"
+
+for RHOST in $RHOSTS
+do
+    USER_AND_HOST=`echo $RHOST| cut -d':' -f 1`
+    HOST=`echo $USER_AND_HOST| cut -d'@' -f 2`
+    
+    count=$(ping -c $COUNT $HOST | grep 'received' | awk -F',' '{ print $2 }' | awk '{ print $1 }')
+    if [ $count -eq $SUCCESS_STATUS ]; then
+    # 100% failed
+        log_failure_msg "$RHOST is down ($?)"
+        echo "Host : $RHOST is down (ping failed) at $(date)" #| mail -s "$SUBJECT" $EMAILID
+        echo "Host : $RHOST is down (ping failed) at $(date)" &>>$LOGFILE
+    else
+        log_action_begin_msg "Copying backups to host: $RHOST"
+        $RSYNC -ar $BACKUPDIR $RHOST
+        if [ "$?" -eq "$SUCCESS_STATUS" ]
+        then
+            log_action_end_msg "$?"
+            echo "Successfully copied backups to host: $RHOST"
+            echo "Successfully copied backups to host: $RHOST" &>>$LOGFILE
+        else
+            log_failure_msg "$?"
+            echo "Experienced an error when copying the backups to host: $RHOST" &>>$LOGFILE
+        fi
+        #echo "$RHOST is online"
+    fi
+done
+
+exit 0
