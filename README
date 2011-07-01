@@ -1,0 +1,8 @@
+This is the README file for the db-backup script.
+
+Simply add this file to your path and type it's name to start backup.
+
+Adjust parameters such as encryption passphrase.
+
+Encrypt this script using shc (www.datsi.fi.upm.es/~frosal) 
+to hide the encryption passphrase and database password.
