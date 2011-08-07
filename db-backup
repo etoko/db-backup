@@ -127,17 +127,17 @@ do
         log_failure_msg "$RHOST is down ($?)"
         #echo "Host : $RHOST is down (ping failed) at $(date)" #| mail -s "$SUBJECT" $EMAILID
         #echo "Host : $RHOST is down (ping failed) at $(date)" &>>$LOGFILE
-        echo "Host : $RHOST is down (ping failed) at $(date)" | tee -a $LOGFILE
+        echo "Host : $RHOST is down (ping failed) at $(date)" 
     else
         log_action_begin_msg "Copying backups to host: $RHOST"
         $RSYNC -ar $BACKUPDIR $RHOST
         if [ "$?" -eq "$SUCCESS_STATUS" ]
         then
             log_action_end_msg "$?"
-            echo "Successfully copied backups to host: $RHOST" | tee -a $LOGFILE
+            echo "Successfully copied backups to host: $RHOST"
         else
             log_failure_msg "$?"
-            echo "Experienced an error when copying the backups to host: $RHOST" | tee -a $LOGFILE
+            echo "Experienced an error when copying the backups to host: $RHOST" 
         fi
         #echo "$RHOST is online"
     fi
@@ -156,17 +156,17 @@ do
     # 100% failed
         $OFFLINE_HOSTS=$OFFLINE_HOSTS+$RHOST
         log_failure_msg "$RHOST is down ($?)"
-        echo "Host : $RHOST is down (ping failed) at $(date)" | tee -a $LOGFILE
+        echo "Host : $RHOST is down (ping failed) at $(date)" 
     else
         log_action_begin_msg "Copying backups to host: $RHOST"
         $RSYNC -ar $BACKUPDIR $RHOST
         if [ "$?" -eq "$SUCCESS_STATUS" ]
         then
             log_action_end_msg "$?"
-            echo "Successfully copied backups to host: $RHOST" | tee -a $LOGFILE
+            echo "Successfully copied backups to host: $RHOST" 
         else
             log_failure_msg "$?"
-            echo "Experienced an error when copying the backups to host: $RHOST" | tee -a $LOGFILE
+            echo "Experienced an error when copying the backups to host: $RHOST" 
         fi
         #echo "$RHOST is online"
     fi
