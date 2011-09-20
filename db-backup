@@ -92,7 +92,7 @@ fi
 log_action_begin_msg "Encrypting backup"
 FILE_EXTENSION=".gz"
 COMPRESSED_FILENAME=$FILENAME$FILE_EXTENSION
-$GPG --yes --passphrase="!kosidurame?no" -c $COMPRESSED_FILENAME
+$GPG --yes --passphrase="y0urpa55phra53" -c $COMPRESSED_FILENAME
  	
 if [ "$?" -eq "$SUCCESS_STATUS" ]
 then
