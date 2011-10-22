@@ -4,26 +4,20 @@
 #
 #####################################################################
 # Script does four things;
-# -Back up    database to path /home/ / _home/ _backup
+# -Back up a database to path
 # -Compress the backup using gzip compression tool
 # -Encrypt the backup
 # -rsync the backup directory to (a) file server(s).
 # 
 ##################################################################
 # Created: Emmanuel Toko 2010-09-21 14:41 0.1
-# Modified: Emmanuel Toko 2011-02-23 16:21 0.1.1
-# Modified: Emmanuel Toko 2011-03-03 07:30 1.0
-# Modified: Emmanuel Toko 2011-03-08 16:09 1.1.1
-# Modified: Emmanuel Toko 2011-03-14 16:09 1.1.2
-# Modified: Emmanuel Toko 2011-07-28 15:20 1.3.3
-# Modified: Emmanuel Toko 2011-08-11 11:30 1.3.4
 #####################################################################
 
 #Variables
 DATE=`date +%F~%T`
-FILENAME="$HOME" "backups/ -$DATE.sql"
+FILENAME="$HOME" "backups/db-name-$DATE.sql"
 LOGFILE="$HOME" "backups/log/backup-log"
-BACKUPDIR="$HOME" "/home/ /backups/"
+BACKUPDIR="$HOME" "/home/user/backups/"
 MKDIR=/bin/mkdir
 TOUCH=/usr/bin/touch
 LOGGER=/usr/bin/logger
