@@ -1,4 +1,5 @@
 #!/bin/bash
+<<<<<<< HEAD
 #Version 1.1.3
 #db-backup
 #
@@ -16,8 +17,19 @@ DATE=`date +%F~%T`
 FILENAME=/home/user/backups/db-name-$DATE.sql
 LOGFILE=/home/user/backups/log/backup-log
 BACKUPDIR=/home/user/backups/
+=======
+#Version 1.3.4
+# -backup
+
+#Variables
+DATE=`date +%F~%T`
+FILENAME="$HOME" "backups/ -$DATE.sql"
+LOGFILE="$HOME" "backups/log/backup-log"
+BACKUPDIR="$HOME" "/home/ /backups/"
+>>>>>>> 4673b911b3389dd1ba58393a278fc7d270aa7c9f
 MKDIR=/bin/mkdir
 TOUCH=/usr/bin/touch
+LOGGER=/usr/bin/logger
 
 if [ -e $BACKUPDIR ]
 then
@@ -27,8 +39,59 @@ else
 	$TOUCH $LOGFILE
 fi
 
+get_host() {
+
+HOSTS=("${@}")
+
+
+for RHOST in ${HOSTS[@]}
+do
+    HOST=`echo RHOST | cut -d':' -f 1 | cut -d'@' -f 2`
+    
+    count=$(ping -c $COUNT $HOST | grep 'received' | awk -F',' '{ print $2 }' | awk '{ print $1 }')
+    if [ $count -eq $SUCCESS_STATUS ]; then
+    # 100% failed
+        OFFLINE_HOSTS=$OFFLINE_HOSTS" "$RHOST
+        log_failure_msg "$RHOST is down ($?)"
+        #echo "Host : $RHOST is down (ping failed) at $(date)" #| mail -s "$SUBJECT" $EMAILID
+        #echo "Host : $RHOST is down (ping failed) at $(date)" &>>$LOGFILE
+        echo "Host : $RHOST is down (ping failed) at $(date)" | tee -a $LOGFILE
+    else
+        log_action_begin_msg "Copying backups to host: $RHOST"
+        $RSYNC -ar $BACKUPDIR $RHOST
+        if [ "$?" -eq "$SUCCESS_STATUS" ]
+        then
+            log_action_end_msg "$?"
+            echo "Successfully copied backups to host: $RHOST" | tee -a $LOGFILE
+        else
+            log_failure_msg "$?"
+            echo "Experienced an error when copying the backups to host: $RHOST" | tee -a $LOGFILE
+        fi
+        #echo "$RHOST is online"
+    fi
+done
+echo $1	$2
+}
+
+get_host $RHOST
+echo "$1"
+
+exit
+
 ##Space separated list of backup hosts Backup hosts
-RHOSTS="user1@192.168.1.100:backups/user/ user2@172.16.1.20:user_home/user_backup/ user3@192.168.5.3:user/backups/ user4@10.10.10.1:user/backups"
+<<<<<<< HEAD
+RHOSTS="user1@10.10.1.100:backups/user/ user2@172.16.1.20:user_home/user_backup/ user3@10.10.5.3:user/backups/ user4@10.10.10.1:user/backups"
+=======
+RHOSTS=(
+	"user1@10.10.1.11:backups/ /" 
+	"user2@10.10.1.9: _home/ _backup/" 
+	"user3@10.10.5.3: /backups/" 
+	"user4@10.10.5.1: /backups"
+)
+
+get_host
+exit 0
+>>>>>>> 4673b911b3389dd1ba58393a278fc7d270aa7c9f
 
 #Programs
 MYSQLDUMP=/usr/bin/mysqldump
@@ -44,6 +107,7 @@ UNLINK=/usr/bin/unlink
 #LSB log-* functions
 . /lib/lsb/init-functions
 
+<<<<<<< HEAD
 if [ ! -x $MYSQLDUMP ]
 then
 	log_failure_msg "mysqldump was not installed"
@@ -62,7 +126,27 @@ echo "user Backup operations for date: $DATE" &>>$LOGFILE
 #Backup user db
 echo "Backing up user database..." &>> $LOGFILE
 log_action_begin_msg "Backing up user database..."
-$MYSQLDUMP -u user -p1nvene0 user > $FILENAME
+$MYSQLDUMP -u user -ppasswd user > $FILENAME
+=======
+[ -x "$MYSQLDUMP" ] || exit 1
+
+log_failure_msg "mysqldump was not installed"
+exit 1
+
+if [ ! -x $GPG ]
+then
+	log_warning_msg "gpg is not installed backup won't be encrypted"
+fi
+echo "**********************************************************" &>> $LOGFILE
+
+echo
+echo "  Backup operations for date: $DATE" &>>$LOGFILE
+
+#Backup   db
+echo "Backing up   database..." &>> $LOGFILE
+log_action_begin_msg "Backing up   database..."
+$MYSQLDUMP -u   -p1nvene0   > $FILENAME
+>>>>>>> 4673b911b3389dd1ba58393a278fc7d270aa7c9f
 
 SUCCESS_STATUS=0
 
@@ -76,8 +160,13 @@ else
 fi
 
 #Compress file
+<<<<<<< HEAD
 echo "Compressing user db dump... $FILENAME" &>>$LOGFILE
 log_action_begin_msg "Compressing user backup using gzip..."
+=======
+echo "Compressing   db dump... $FILENAME" &>>$LOGFILE
+log_action_begin_msg "Compressing   backup using gzip..."
+>>>>>>> 4673b911b3389dd1ba58393a278fc7d270aa7c9f
 $GZIP $FILENAME
 if [ "$?" -eq "$SUCCESS_STATUS" ]
 then
@@ -92,7 +181,11 @@ fi
 log_action_begin_msg "Encrypting backup"
 FILE_EXTENSION=".gz"
 COMPRESSED_FILENAME=$FILENAME$FILE_EXTENSION
+<<<<<<< HEAD
 $GPG --yes --passphrase="your_pa55phr9s3" -c $COMPRESSED_FILENAME
+=======
+$GPG --yes --passphrase="your_passphrase_here" -c $COMPRESSED_FILENAME
+>>>>>>> 4673b911b3389dd1ba58393a278fc7d270aa7c9f
  	
 if [ "$?" -eq "$SUCCESS_STATUS" ]
 then
@@ -113,27 +206,43 @@ COUNT=5
 
 # email report when
 SUBJECT="Ping failed"
+<<<<<<< HEAD
 EMAILID="user@localhost"
+=======
+EMAILID=" admin@localhost"
+>>>>>>> 4673b911b3389dd1ba58393a278fc7d270aa7c9f
 OFFLINE_HOSTS=""
 
-for RHOST in $RHOSTS
+
+sleep 120 #wait 2 minute(s) before we attempt to reconnect to the failed/offline hosts to see if they are back online
+
+log_action_begin_msg "Trying to copy (again) to failed hosts"
+
+for RHOST in $OFFLINE_HOSTS
 do
     HOST=`echo $RHOST | cut -d':' -f 1 | cut -d'@' -f 2`
     
     count=$(ping -c $COUNT $HOST | grep 'received' | awk -F',' '{ print $2 }' | awk '{ print $1 }')
     if [ $count -eq $SUCCESS_STATUS ]; then
     # 100% failed
+<<<<<<< HEAD
         OFFLINE_HOSTS=$OFFLINE_HOSTS" "$RHOST
         log_failure_msg "$RHOST is down ($?)"
         #echo "Host : $RHOST is down (ping failed) at $(date)" #| mail -s "$SUBJECT" $EMAILID
         #echo "Host : $RHOST is down (ping failed) at $(date)" &>>$LOGFILE
         echo "Host : $RHOST is down (ping failed) at $(date)" 
+=======
+        $OFFLINE_HOSTS=$OFFLINE_HOSTS+$RHOST
+        log_failure_msg "$RHOST is down ($?)"
+        echo "Host : $RHOST is down (ping failed) at $(date)" | tee -a $LOGFILE
+>>>>>>> 4673b911b3389dd1ba58393a278fc7d270aa7c9f
     else
         log_action_begin_msg "Copying backups to host: $RHOST"
         $RSYNC -ar $BACKUPDIR $RHOST
         if [ "$?" -eq "$SUCCESS_STATUS" ]
         then
             log_action_end_msg "$?"
+<<<<<<< HEAD
             echo "Successfully copied backups to host: $RHOST"
         else
             log_failure_msg "$?"
@@ -167,6 +276,12 @@ do
         else
             log_failure_msg "$?"
             echo "Experienced an error when copying the backups to host: $RHOST" 
+=======
+            echo "Successfully copied backups to host: $RHOST" | tee -a $LOGFILE
+        else
+            log_failure_msg "$?"
+            echo "Experienced an error when copying the backups to host: $RHOST" | tee -a $LOGFILE
+>>>>>>> 4673b911b3389dd1ba58393a278fc7d270aa7c9f
         fi
         #echo "$RHOST is online"
     fi
