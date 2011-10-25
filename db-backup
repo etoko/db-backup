@@ -1,6 +1,6 @@
 #!/bin/bash
 #Version 1.3.4
-# -backup
+#db-backup
 #
 #####################################################################
 # Script does four things;
@@ -15,70 +15,13 @@
 
 #Variables
 DATE=`date +%F~%T`
-FILENAME="$HOME" "backups/db-name-$DATE.sql"
+ALIAS=openmrs
+FILENAME="$HOME" "backups/$ALIAS-$DATE.sql"
 LOGFILE="$HOME" "backups/log/backup-log"
 BACKUPDIR="$HOME" "/home/user/backups/"
 MKDIR=/bin/mkdir
 TOUCH=/usr/bin/touch
 LOGGER=/usr/bin/logger
-
-if [ -e $BACKUPDIR ]
-then
-	echo "Backup directory exists"
-else
-	$MKDIR -p $BACKUPDIR/log
-	$TOUCH $LOGFILE
-fi
-
-get_host() {
-
-HOSTS=("${@}")
-
-
-for RHOST in ${HOSTS[@]}
-do
-    HOST=`echo RHOST | cut -d':' -f 1 | cut -d'@' -f 2`
-    
-    count=$(ping -c $COUNT $HOST | grep 'received' | awk -F',' '{ print $2 }' | awk '{ print $1 }')
-    if [ $count -eq $SUCCESS_STATUS ]; then
-    # 100% failed
-        OFFLINE_HOSTS=$OFFLINE_HOSTS" "$RHOST
-        log_failure_msg "$RHOST is down ($?)"
-        #echo "Host : $RHOST is down (ping failed) at $(date)" #| mail -s "$SUBJECT" $EMAILID
-        #echo "Host : $RHOST is down (ping failed) at $(date)" &>>$LOGFILE
-        echo "Host : $RHOST is down (ping failed) at $(date)" | tee -a $LOGFILE
-    else
-        log_action_begin_msg "Copying backups to host: $RHOST"
-        $RSYNC -ar $BACKUPDIR $RHOST
-        if [ "$?" -eq "$SUCCESS_STATUS" ]
-        then
-            log_action_end_msg "$?"
-            echo "Successfully copied backups to host: $RHOST" | tee -a $LOGFILE
-        else
-            log_failure_msg "$?"
-            echo "Experienced an error when copying the backups to host: $RHOST" | tee -a $LOGFILE
-        fi
-        #echo "$RHOST is online"
-    fi
-done
-echo $1	$2
-}
-
-get_host $RHOST
-echo "$1"
-
-exit
-
-##Space separated list of backup hosts Backup hosts
-RHOSTS=(
-	"user1@172.16.126.11:backups/ /" 
-	"user2@172.16.126.9:home/backup/" 
-	"user3@172.16.5.3:backups/" 
-	"user4@172.16.5.1:backups"
-)
-
-get_host
-exit 0
 
 #Programs
 MYSQLDUMP=/usr/bin/mysqldump
@@ -88,6 +31,11 @@ RSYNC=/usr/bin/rsync
 GZIP=/bin/gzip
 UNLINK=/usr/bin/unlink
 
+if [ ! -e $BACKUPDIR ]
+	$MKDIR -p $BACKUPDIR/log
+	$TOUCH $LOGFILE
+fi
+
 #Load VERBOSE setting and other rcS variables
 . /lib/init/vars.sh
 
@@ -96,37 +44,36 @@ UNLINK=/usr/bin/unlink
 
 [ -x "$MYSQLDUMP" ] || exit 1
 
-log_failure_msg "mysqldump was not installed"
-exit 1
-
 if [ ! -x $GPG ]
 then
-	log_warning_msg "gpg is not installed backup won't be encrypted"
-fi
-echo "**********************************************************" &>> $LOGFILE
+    log_warning_msg "gpg is not installed backup won't be encrypted"
+    echo "Do you want to backup without encrypting y/n "
+    
+    read CONFIRMATION
 
-echo
-echo "  Backup operations for date: $DATE" &>>$LOGFILE
+    case "$CONFIRMATION"
+        y )
+         ;;
+        n ) exit 0 ;;
+        * ) echo "Enter y or n"
+        shift
+    esac
+fi
 
 #Backup   db
-echo "Backing up   database..." &>> $LOGFILE
-log_action_begin_msg "Backing up   database..."
+log_action_begin_msg "Backing up database"
 $MYSQLDUMP -u   -ppasswd   > $FILENAME
-
-SUCCESS_STATUS=0
 
 if [ "$?" -eq "$SUCCESS_STATUS" ]
 then
 	log_action_end_msg "$?"
 else
-	log_failure_msg "$?"
-	echo "Encountered an error during backup $?" &>> $LOGFILE 
+	log_failure_msg "Encountered an error during backup"
 	exit 1
 fi
 
 #Compress file
-echo "Compressing   db dump... $FILENAME" &>>$LOGFILE
-log_action_begin_msg "Compressing   backup using gzip..."
+log_action_begin_msg "Compressing   backup using gzip"
 $GZIP $FILENAME
 if [ "$?" -eq "$SUCCESS_STATUS" ]
 then
@@ -153,12 +100,62 @@ else
 	echo "experienced an error during encryption" &>>$LOGFILE
 fi
 
+####
+#function rsyncs files to host(s)
+###########
+scopy() {
+
+    HOSTS=("${@}")
+     
+    SUCCESS_STATUS=0
+    PING_COUNT=5 # number of pings
+
+    for RHOST in ${HOSTS[@]}
+    do
+        HOST=`echo RHOST | cut -d':' -f 1 | cut -d'@' -f 2`
+    
+        COUNT=$(ping -c $PING_COUNT $HOST | grep 'received' | awk -F',' '{ print $2 }' | awk '{ print $1 }')
+        if [ $COUNT -eq $SUCCESS_STATUS ]; then #name of the variable 'SUCCESS_STATUS' is kind of a misnomer here
+            # 100% failed
+            OFFLINE_HOSTS=$OFFLINE_HOSTS" "$RHOST
+            log_failure_msg "$RHOST is probably down/offline"
+            #echo "Host : $RHOST is down (ping failed) at $(date)" #| mail -s "$SUBJECT" $EMAILID
+            #echo "Host : $RHOST is down (ping failed) at $(date)" &>>$LOGFILE
+        else
+            log_action_begin_msg "Copying backup(s) to host: $RHOST"
+            $RSYNC -ar $BACKUPDIR $RHOST
+            if [ "$?" -eq "$SUCCESS_STATUS" ]
+            then
+                log_action_end_msg "$?"
+            else
+                log_failure_msg "Experienced error copying backup(s) to $RHOST" 
+            fi
+            #echo "$RHOST is online"
+        fi
+        done
+}
+
+if [ -n $? ]
+then
+    scopy $?
+    exit 0	
+fi
+
+##Space separated list of backup hosts Backup hosts
+RHOSTS=(
+	"user1@172.16.126.11:backups/ /" 
+	"user2@172.16.126.9:home/backup/" 
+	"user3@172.16.5.3:backups/" 
+	"user4@172.16.5.1:backups"
+)
+
+scopy $RHOST
+exit 0
+
 #Copy files to file server
 echo "Copying backups to file server..."&>>$LOGFILE
 #log_action_begin_msg "Copying backups to file server ..."
 
-# number of ping requests
-COUNT=5
 
 # email report when
 SUBJECT="Ping failed"
@@ -174,8 +171,8 @@ for RHOST in $OFFLINE_HOSTS
 do
     HOST=`echo $RHOST | cut -d':' -f 1 | cut -d'@' -f 2`
     
-    count=$(ping -c $COUNT $HOST | grep 'received' | awk -F',' '{ print $2 }' | awk '{ print $1 }')
-    if [ $count -eq $SUCCESS_STATUS ]; then
+    COUNT=$(ping -c $PING_COUNT $HOST | grep 'received' | awk -F',' '{ print $2 }' | awk '{ print $1 }')
+    if [ $COUNT -eq $SUCCESS_STATUS ]; then
     # 100% failed
         $OFFLINE_HOSTS=$OFFLINE_HOSTS+$RHOST
         log_failure_msg "$RHOST is down ($?)"
