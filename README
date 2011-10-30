@@ -6,3 +6,6 @@ Adjust parameters such as encryption passphrase.
 
 Encrypt this script using shc (www.datsi.fi.upm.es/~frosal) 
 to hide the encryption passphrase and database password.
+
+This script assumes that you use GNUPG (gpg) for encryption. You can always
+change the encryption tool in the script.
