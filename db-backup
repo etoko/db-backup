@@ -16,14 +16,15 @@
 #Variables
 DATE=`date +%F~%T`
 ALIAS=openmrs
-FILENAME="$HOME" "backups/$ALIAS-$DATE.sql"
-LOGFILE="$HOME" "backups/log/backup-log"
-BACKUPDIR="$HOME" "/home/user/backups/"
+FILENAME="$HOME""/""$ALIAS-backups/$ALIAS-$DATE.sql"
+LOGFILE="$HOME""/$ALIAS-backups/log/$ALIAS-backup-log"
+BACKUPDIR="$HOME""/$ALIAS-backups/"
+DB_USER=$ALIAS
+
+#Programs
 MKDIR=/bin/mkdir
 TOUCH=/usr/bin/touch
 LOGGER=/usr/bin/logger
-
-#Programs
 MYSQLDUMP=/usr/bin/mysqldump
 GPG=/usr/bin/gpg
 PING=/bin/ping
@@ -32,6 +33,7 @@ GZIP=/bin/gzip
 UNLINK=/usr/bin/unlink
 
 if [ ! -e $BACKUPDIR ]
+then
 	$MKDIR -p $BACKUPDIR/log
 	$TOUCH $LOGFILE
 fi
@@ -44,70 +46,63 @@ fi
 
 [ -x "$MYSQLDUMP" ] || exit 1
 
-if [ ! -x $GPG ]
-then
-    log_warning_msg "gpg is not installed backup won't be encrypted"
-    echo "Do you want to backup without encrypting y/n "
+SUCCESS_STATUS=0
+
+###dump db, compress & encrypt
+backup ()
+{
+    #Backup   db
+    log_action_begin_msg "Backing up database"
+    $MYSQLDUMP -u $DB_USER -ppasswd $ALIAS  > $FILENAME
     
-    read CONFIRMATION
+    if [ "$?" -eq "$SUCCESS_STATUS" ]
+    then
+    	log_action_end_msg 0
+    else
+	log_action_end_msg 1
+    	#log_failure_msg "Encountered an error during backup"
+	$LOGGER "Encountered error when creating $FILENAME dump"
+    	exit 1
+    fi
+    
+    #Compress file
+    log_action_begin_msg "Compressing backup using gzip"
+    $GZIP $FILENAME
+    if [ "$?" -eq "$SUCCESS_STATUS" ]
+    then
+    	log_action_end_msg 0
+    	$LOGGER "Successfully compressed $ALIAS dump $FILENAME"
+    else
+    	log_action_end_msg 1
+    	$LOGGER "Experienced error while compressing dump $FILENAME"
+    	exit 1 #Consider making it possible to send backup files despite the fact that they may not be well compressed
+    fi
+    
+    log_action_begin_msg "Encrypting dump"
+    FILE_EXTENSION=".gz"
+    COMPRESSED_FILENAME=$FILENAME$FILE_EXTENSION
+    $GPG -q --yes --passphrase="your_passphrase" -c $COMPRESSED_FILENAME
+     	
+    if [ "$?" -eq "$SUCCESS_STATUS" ]
+    then
+    	log_end_msg 0
+    	$LOGGER "successfully encrypted dump $FILENAME"
+    	$UNLINK $COMPRESSED_FILENAME
+    else
+    	log_end_msg 1
+    	$LOGGER "experienced error while encrypting $FILENAME"
+    fi
+} #End backup function
 
-    case "$CONFIRMATION"
-        y )
-         ;;
-        n ) exit 0 ;;
-        * ) echo "Enter y or n"
-        shift
-    esac
-fi
+OFFLINE_HOSTS=""
 
-#Backup   db
-log_action_begin_msg "Backing up database"
-$MYSQLDUMP -u   -ppasswd   > $FILENAME
-
-if [ "$?" -eq "$SUCCESS_STATUS" ]
-then
-	log_action_end_msg "$?"
-else
-	log_failure_msg "Encountered an error during backup"
-	exit 1
-fi
-
-#Compress file
-log_action_begin_msg "Compressing   backup using gzip"
-$GZIP $FILENAME
-if [ "$?" -eq "$SUCCESS_STATUS" ]
-then
-	log_action_end_msg "$?"
-	echo "...successfully compressed db dump $FILENAME" &>>$LOGFILE	
-else
-	log_failure_msg "$?"
-	echo "...Experienced an error while compressing file $FILENAME" &>>$LOGFILE
-	exit 1 #Consider making it possible to send backup files despite the fact that they may not be well compressed
-fi
-
-log_action_begin_msg "Encrypting backup"
-FILE_EXTENSION=".gz"
-COMPRESSED_FILENAME=$FILENAME$FILE_EXTENSION
-$GPG --yes --passphrase="your_passphrase" -c $COMPRESSED_FILENAME
- 	
-if [ "$?" -eq "$SUCCESS_STATUS" ]
-then
-	log_action_end_msg "$?"
-	echo "successfully encrypted backup" &>>$LOGFILE
-	$UNLINK $COMPRESSED_FILENAME
-else
-	log_failure_msg "$?"
-	echo "experienced an error during encryption" &>>$LOGFILE
-fi
-
-####
+##################################
 #function rsyncs files to host(s)
 ###########
 scopy() {
 
     HOSTS=("${@}")
      
-    SUCCESS_STATUS=0
     PING_COUNT=5 # number of pings
 
     for RHOST in ${HOSTS[@]}
@@ -116,30 +111,31 @@ scopy() {
     
         COUNT=$(ping -c $PING_COUNT $HOST | grep 'received' | awk -F',' '{ print $2 }' | awk '{ print $1 }')
         if [ $COUNT -eq $SUCCESS_STATUS ]; then #name of the variable 'SUCCESS_STATUS' is kind of a misnomer here
-            # 100% failed
+            # 100% failed $RHOST is offline!!!
             OFFLINE_HOSTS=$OFFLINE_HOSTS" "$RHOST
             log_failure_msg "$RHOST is probably down/offline"
             #echo "Host : $RHOST is down (ping failed) at $(date)" #| mail -s "$SUBJECT" $EMAILID
-            #echo "Host : $RHOST is down (ping failed) at $(date)" &>>$LOGFILE
+            $LOGGER "Host : $RHOST is down (ping failed) at $(date)"
         else
+            #$RHOST is online
             log_action_begin_msg "Copying backup(s) to host: $RHOST"
             $RSYNC -ar $BACKUPDIR $RHOST
             if [ "$?" -eq "$SUCCESS_STATUS" ]
             then
-                log_action_end_msg "$?"
+                log_action_end_msg 0
             else
-                log_failure_msg "Experienced error copying backup(s) to $RHOST" 
+                log_action_end_msg 1
+                $LOGGER "Experienced error copying backup(s) to $RHOST" 
             fi
-            #echo "$RHOST is online"
         fi
         done
 }
 
-if [ -n $? ]
-then
-    scopy $?
-    exit 0	
-fi
+#if [ -n $? ]
+#then
+#    scopy $?
+#    exit 0	
+#fi
 
 ##Space separated list of backup hosts Backup hosts
 RHOSTS=(
@@ -149,47 +145,78 @@ RHOSTS=(
 	"user4@172.16.5.1:backups"
 )
 
-scopy $RHOST
+#options ()
+#{
+#	HOST=$
+#	retries=$4
+#}
+
+while [ $# -ge 0 ]; do    # Until you run out of parameters . . .
+ case "$1" in
+
+       "")
+                   if [ ! -x $GPG ]
+                   then
+                       log_warning_msg "gpg is not installed backup won't be encrypted"
+                       echo "Do you want to backup without encryption? y/n "
+                       
+                       read CONFIRMATION
+                   
+                       case "$CONFIRMATION" in
+                           y ) log_warning_msg "Backing up without encryption"
+                               backup
+                               scopy $?
+                               exit 0
+                            ;;
+                           n ) exit 0 ;;
+                           * ) echo "Enter y or n";;
+                       esac
+                   fi
+                  backup
+                  scopy $RHOSTS
+		  exit 0
+                  ;;
+      # -d|--delay)
+		#			TODO
+      #            ;;
+      # -r|retries)
+		#			TODO
+      #            ;;
+       -V|--version)
+                  echo "db-back 0.18 Emmanuel Toko"
+                  echo "Released under the GNU GPL."
+                  echo 
+                  exit 0
+                  ;;
+       
+       -v|--verbose)
+                  # print verbose info during backup
+                  DEBUG=1
+                  ;;
+       -h|--host)
+                 HOST="$2"
+                 shift
+                 scopy $HOST
+                 ;;
+     esac
+     shift       # Check next set of parameters.
+   done
+
 exit 0
 
 #Copy files to file server
-echo "Copying backups to file server..."&>>$LOGFILE
+#echo "Copying backups to file server..."&>>$LOGFILE
 #log_action_begin_msg "Copying backups to file server ..."
 
 
 # email report when
 SUBJECT="Ping failed"
 EMAILID="admin@localhost"
-OFFLINE_HOSTS=""
 
+#sleep 240 #wait 4 minute(s) before we attempt to reconnect to the failed/offline hosts to see if they are back online
 
-sleep 120 #wait 2 minute(s) before we attempt to reconnect to the failed/offline hosts to see if they are back online
+#log_action_begin_msg "Trying to copy (again) to failed hosts"
 
-log_action_begin_msg "Trying to copy (again) to failed hosts"
-
-for RHOST in $OFFLINE_HOSTS
-do
-    HOST=`echo $RHOST | cut -d':' -f 1 | cut -d'@' -f 2`
-    
-    COUNT=$(ping -c $PING_COUNT $HOST | grep 'received' | awk -F',' '{ print $2 }' | awk '{ print $1 }')
-    if [ $COUNT -eq $SUCCESS_STATUS ]; then
-    # 100% failed
-        $OFFLINE_HOSTS=$OFFLINE_HOSTS+$RHOST
-        log_failure_msg "$RHOST is down ($?)"
-        echo "Host : $RHOST is down (ping failed) at $(date)" | tee -a $LOGFILE
-    else
-        log_action_begin_msg "Copying backups to host: $RHOST"
-        $RSYNC -ar $BACKUPDIR $RHOST
-        if [ "$?" -eq "$SUCCESS_STATUS" ]
-        then
-            log_action_end_msg "$?"
-            echo "Successfully copied backups to host: $RHOST" | tee -a $LOGFILE
-        else
-            log_failure_msg "$?"
-            echo "Experienced an error when copying the backups to host: $RHOST" | tee -a $LOGFILE
-        fi
-        #echo "$RHOST is online"
-    fi
-done
+#scopy $OFFLINE_HOSTS
 
 exit 0
