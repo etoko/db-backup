@@ -15,7 +15,7 @@
 
 #Variables
 DATE=`date +%F~%T`
-ALIAS=openmrs
+ALIAS=test
 FILENAME="$HOME""/""$ALIAS-backups/$ALIAS-$DATE.sql"
 LOGFILE="$HOME""/$ALIAS-backups/log/$ALIAS-backup-log"
 BACKUPDIR="$HOME""/$ALIAS-backups/"
@@ -29,6 +29,7 @@ MYSQLDUMP=/usr/bin/mysqldump
 GPG=/usr/bin/gpg
 PING=/bin/ping
 RSYNC=/usr/bin/rsync
+SCP=/usr/bin/scp
 GZIP=/bin/gzip
 UNLINK=/usr/bin/unlink
 
@@ -53,13 +54,13 @@ backup ()
 {
     #Backup   db
     log_action_begin_msg "Backing up database"
-    $MYSQLDUMP -u $DB_USER -ppasswd $ALIAS  > $FILENAME
+    $MYSQLDUMP -u $DB_USER -ppassword $ALIAS  > $FILENAME
     
     if [ "$?" -eq "$SUCCESS_STATUS" ]
     then
     	log_action_end_msg 0
     else
-	log_action_end_msg 1
+	log_end_msg 1
     	#log_failure_msg "Encountered an error during backup"
 	$LOGGER "Encountered error when creating $FILENAME dump"
     	exit 1
@@ -99,23 +100,26 @@ OFFLINE_HOSTS=""
 ##################################
 #function rsyncs files to host(s)
 ###########
-scopy() {
+rscopy() {
 
     HOSTS=("${@}")
+    #HOSTS=(`echo "$@"`)
+    #HOSTS=(`echo “$@”`)
      
     PING_COUNT=5 # number of pings
 
-    for RHOST in ${HOSTS[@]}
+    #for RHOST in ${HOSTS[@]}
+    for RHOST in ${HOSTS[*]}
     do
-        HOST=`echo RHOST | cut -d':' -f 1 | cut -d'@' -f 2`
-    
+        HOST=`echo $RHOST | cut -d':' -f 1 | cut -d'@' -f 2`
+         
         COUNT=$(ping -c $PING_COUNT $HOST | grep 'received' | awk -F',' '{ print $2 }' | awk '{ print $1 }')
         if [ $COUNT -eq $SUCCESS_STATUS ]; then #name of the variable 'SUCCESS_STATUS' is kind of a misnomer here
             # 100% failed $RHOST is offline!!!
             OFFLINE_HOSTS=$OFFLINE_HOSTS" "$RHOST
-            log_failure_msg "$RHOST is probably down/offline"
+            log_warning_msg "$HOST is probably down/offline"
             #echo "Host : $RHOST is down (ping failed) at $(date)" #| mail -s "$SUBJECT" $EMAILID
-            $LOGGER "Host : $RHOST is down (ping failed) at $(date)"
+            $LOGGER "$RHOST is down (ping failed) at $(date)"
         else
             #$RHOST is online
             log_action_begin_msg "Copying backup(s) to host: $RHOST"
@@ -129,20 +133,59 @@ scopy() {
             fi
         fi
         done
+
+        exit 0
+}
+
+scopy() {
+    
+    HOSTS=("${@}")
+    #HOSTS=(`echo "$@"`)
+    #HOSTS=(`echo “$@”`)
+     
+    PING_COUNT=5 # number of pings
+
+    #for RHOST in ${HOSTS[@]}
+    for RHOST in ${HOSTS[*]}
+    do
+        HOST=`echo $RHOST | cut -d':' -f 1 | cut -d'@' -f 2`
+         
+        COUNT=$(ping -c $PING_COUNT $HOST | grep 'received' | awk -F',' '{ print $2 }' | awk '{ print $1 }')
+        if [ $COUNT -eq $SUCCESS_STATUS ]; then #name of the variable 'SUCCESS_STATUS' is kind of a misnomer here
+            # 100% failed $RHOST is offline!!!
+            OFFLINE_HOSTS=$OFFLINE_HOSTS" "$RHOST
+            log_warning_msg "$HOST is probably down/offline"
+            #echo "Host : $RHOST is down (ping failed) at $(date)" #| mail -s "$SUBJECT" $EMAILID
+            $LOGGER "$RHOST is down (ping failed) at $(date)"
+        else
+            #$RHOST is online
+            log_action_begin_msg "Copying $FILENAME to host: $RHOST"
+            $SCP "$COMPRESSED_FILENAME"".gpg" $RHOST
+            if [ "$?" -eq "$SUCCESS_STATUS" ]
+            then
+                log_action_end_msg 0
+            else
+                log_action_end_msg 1
+                $LOGGER "Experienced error copying backup to $RHOST" 
+            fi
+        fi
+        done
+
+        exit 0
 }
 
 #if [ -n $? ]
 #then
-#    scopy $?
+#    rscopy $?
 #    exit 0	
 #fi
 
 ##Space separated list of backup hosts Backup hosts
-RHOSTS=(
-	"user1@172.16.126.11:backups/ /" 
+RHOSTS=( 
+	"user1@172.16.126.11:backups/" 
 	"user2@172.16.126.9:home/backup/" 
 	"user3@172.16.5.3:backups/" 
-	"user4@172.16.5.1:backups"
+	"user4@172.16.5.1:backups" 
 )
 
 #options ()
@@ -154,34 +197,6 @@ RHOSTS=(
 while [ $# -ge 0 ]; do    # Until you run out of parameters . . .
  case "$1" in
 
-       "")
-                   if [ ! -x $GPG ]
-                   then
-                       log_warning_msg "gpg is not installed backup won't be encrypted"
-                       echo "Do you want to backup without encryption? y/n "
-                       
-                       read CONFIRMATION
-                   
-                       case "$CONFIRMATION" in
-                           y ) log_warning_msg "Backing up without encryption"
-                               backup
-                               scopy $?
-                               exit 0
-                            ;;
-                           n ) exit 0 ;;
-                           * ) echo "Enter y or n";;
-                       esac
-                   fi
-                  backup
-                  scopy $RHOSTS
-		  exit 0
-                  ;;
-      # -d|--delay)
-		#			TODO
-      #            ;;
-      # -r|retries)
-		#			TODO
-      #            ;;
        -V|--version)
                   echo "db-back 0.18 Emmanuel Toko"
                   echo "Released under the GNU GPL."
@@ -196,8 +211,51 @@ while [ $# -ge 0 ]; do    # Until you run out of parameters . . .
        -h|--host)
                  HOST="$2"
                  shift
-                 scopy $HOST
+                 rscopy $HOST
+                echo $HOST 
+                exit 0
                  ;;
+       -H)
+                HOST="$2"
+                shift
+                backup
+                scopy $HOST
+                echo $HOST 
+                exit 0
+                 ;;
+       "")
+                   if [ ! -x $GPG ]
+                   then
+                       log_warning_msg "gpg is not installed backup won't be encrypted"
+                       echo "Do you want to backup without encryption? y/n "
+                       
+                       read CONFIRMATION
+                   
+                       case "$CONFIRMATION" in
+                           y ) log_warning_msg "Backing up without encryption"
+                               backup
+                               rscopy $?
+                               exit 0
+                            ;;
+                           n ) exit 0 ;;
+                           * ) echo "Enter y or n";;
+                       esac
+                   fi
+                  backup
+                  ARG1=`echo ${RHOSTS[*]}`
+                  rscopy $ARG1
+                  sleep 240 #wait 4 minute(s) before we attempt to reconnect to the failed/offline hosts to see if they are back online
+                  
+                  log_action_begin_msg "Trying to copy (again) to failed hosts"
+                  rscopy $OFFLINE_HOSTS
+        	  exit 0
+                  ;;
+      # -d|--delay)
+		#			TODO
+      #            ;;
+      # -r|retries)
+		#			TODO
+      #            ;;
      esac
      shift       # Check next set of parameters.
    done
@@ -213,10 +271,5 @@ exit 0
 SUBJECT="Ping failed"
 EMAILID="admin@localhost"
 
-#sleep 240 #wait 4 minute(s) before we attempt to reconnect to the failed/offline hosts to see if they are back online
-
-#log_action_begin_msg "Trying to copy (again) to failed hosts"
-
-#scopy $OFFLINE_HOSTS
 
 exit 0
